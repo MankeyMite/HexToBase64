@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Hex → Base64 (Pokémon Emerald ACE)</title>
+  <style>
+    :root{ --ink:#111; --muted:#555; --border:#ddd; --bg:#fff; --mono: ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace; }
+    html,body{height:100%}
+    body{margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,Segoe UI,Roboto,Arial,Helvetica,sans-serif;}
+    .wrap{max-width:1000px;margin:24px auto;padding:0 16px}
+    h1{font-size:24px;margin:0 0 8px 0}
+    h2{font-size:18px;margin:20px 0 8px}
+    .muted{color:var(--muted);font-size:13px}
+    .kbd{font-family:var(--mono); background:#eee; border:1px solid var(--border); border-radius:4px; padding:1px 6px}
+    label{font-weight:600}
+    textarea{width:100%;min-height:260px;resize:vertical;border:1px solid var(--border);border-radius:6px;padding:10px 12px;font:14px/1.4 var(--mono);background:#fafafa;white-space:pre}
+    pre.output{white-space:pre;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:10px 12px;background:#fafafa;font:14px/1.4 var(--mono);max-height:480px}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    button{border:1px solid var(--border);background:#f3f3f3;border-radius:6px;padding:8px 12px;cursor:pointer}
+    button.primary{background:#eaeaea;font-weight:600}
+    .error{color:#b00020;font-weight:600;margin-top:6px}
+    .ok{color:#0a7c38;font-weight:700}
+    hr{border:0;border-top:1px solid var(--border);margin:20px 0}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Hex → Base64 (Pokémon Emerald ACE)</h1>
+    <div class="muted">
+      14×8 box names • replace <span class="kbd">/</span>→<span class="kbd">?</span>, <span class="kbd">+</span>→<span class="kbd">!</span> • strip trailing <span class="kbd">=</span> • pad end with <span class="kbd">A</span>
+    </div>
+
+    <h2>Input</h2>
+    <label for="hexIn">Paste your hex bytes (whitespace allowed):</label>
+    <textarea id="hexIn" spellcheck="false" placeholder="Example (10 lines):
+94 56 48 DA   61 6E 54 F8
+BE C3 CE CE   C9 FF FF 00
+00 00 01 02   99 AE 5D A7
+A5 FF FF 00   1A 0A 00 00
+F5 E9 BA 03   0A C7 E3 1D
+F5 38 1C 22   65 38 1C 22
+F5 38 1C 22   FF 38 1C 22
+71 38 1C 22   AD EE 1C 22
+F5 38 1C 22   F5 38 1C 22
+F5 38 1C 22   F5 38 1C 22"></textarea>
+    <div class="row" style="margin-top:8px;">
+      <button id="convertBtn" class="primary">Convert (Hex → Base64)</button>
+      <button id="clearBtn">Clear</button>
+      <span class="muted">Tip: <span class="kbd">Ctrl/⌘ + Enter</span> to convert.</span>
+    </div>
+    <div id="err" class="error" aria-live="polite"></div>
+
+    <hr />
+
+    <h2>Result</h2>
+    <pre id="out" class="output" tabindex="0" aria-label="Conversion output"></pre>
+    <div class="row" style="margin-top:8px;">
+      <button id="copyAllBtn">Copy all</button>
+      <span id="copyMsg" class="muted" role="status"></span>
+    </div>
+
+    <p class="muted" style="margin-top:16px;">Ambiguous helper: O, o, 0, 1, l, I, q</p>
+  </div>
+
+  <script>
+    // Ambiguous characters note
+    const ambiNotes = {
+      O: 'uppercase O',
+      o: 'lowercase o',
+      '0': 'zero (0)',
+      '1': 'one (1)',
+      l: 'lowercase L',
+      I: 'uppercase i (I)',
+      q: 'lowercase q'
+    };
+
+    // Normalize input: keep hex digits and whitespace; collapse spaces
+    const normalizeHex = (input) =>
+      input
+        .replace(/0x/gi, ' ')
+        .replace(/[^0-9a-fA-F\s]/g, ' ')
+        .trim()
+        .replace(/\s+/g, ' ');
+
+    // Convert a *pure* hex string (no spaces) → bytes
+    const hexStringToBytes = (h) => {
+      if (!h.length) return new Uint8Array();
+      if (h.length % 2) throw Error('Odd number of hex digits.');
+      const b = new Uint8Array(h.length / 2);
+      for (let i = 0; i < h.length; i += 2) {
+        const v = parseInt(h.slice(i, i + 2), 16);
+        if (Number.isNaN(v)) throw Error(`Invalid hex ${h.slice(i, i + 2)}`);
+        b[i / 2] = v;
+      }
+      return b;
+    };
+
+    // Browser base64
+    const bytesToBase64 = (bytes) =>
+      btoa(String.fromCharCode(...bytes));
+
+    // Emerald naming rules: / → ?, + → !, strip trailing =
+    const applyEmeraldRules = (b64) =>
+      b64.replace(/\//g, '?').replace(/\+/g, '!').replace(/=+$/, '');
+
+    // Split into 14 boxes, 8 chars each. Pad the final box with 'A' to length 8.
+    function chunkIntoBoxes(s, boxCount = 14, boxLen = 8) {
+      const rows = [];
+      for (let i = 0; i < s.length; i += boxLen) rows.push(s.slice(i, i + boxLen));
+      if (rows.length > boxCount) return rows.slice(0, boxCount);
+      while (rows.length < boxCount) rows.push('');
+      rows[rows.length - 1] = rows.at(-1).padEnd(boxLen, 'A');
+      return rows;
+    }
+
+    // Show ambiguous character notes per box
+    function annotate(box) {
+      const set = new Set();
+      for (const ch of box) if (ambiNotes[ch]) set.add(ambiNotes[ch]);
+      return set.size ? ' [' + [...set].join(', ') + ']' : '';
+    }
+
+    // Final formatted output with aligned labels
+    function format(boxes) {
+      let out = 'Box names (BASE64):\n';
+      boxes.forEach((b, i) => {
+        const idx = i + 1;
+        const space = idx < 10 ? '  ' : ' ';
+        out += `  Box ${idx}:${space}(${b})${annotate(b)}\n`;
+      });
+      return out.trimEnd();
+    }
+
+    // DOM
+    const hexIn = document.getElementById('hexIn');
+    const out = document.getElementById('out');
+    const err = document.getElementById('err');
+    const copyMsg = document.getElementById('copyMsg');
+
+    // Actions
+    document.getElementById('convertBtn').onclick = () => {
+      err.textContent = '';
+      copyMsg.textContent = '';
+      out.textContent = '';
+
+      const norm = normalizeHex(hexIn.value);
+      if (!norm) {
+        err.textContent = 'Please paste hex first.';
+        return;
+      }
+
+      try {
+        const bytes = hexStringToBytes(norm.replace(/\s+/g, ''));
+        const b64 = applyEmeraldRules(bytesToBase64(bytes));
+        const boxes = chunkIntoBoxes(b64, 14, 8);
+        out.textContent = format(boxes);
+      } catch (e) {
+        err.textContent = e.message;
+      }
+    };
+
+    document.getElementById('clearBtn').onclick = () => {
+      hexIn.value = '';
+      out.textContent = '';
+      err.textContent = '';
+      copyMsg.textContent = '';
+    };
+
+    document.getElementById('copyAllBtn').onclick = async () => {
+      const t = out.textContent.trim();
+      if (!t) {
+        copyMsg.textContent = 'Nothing to copy.';
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(t);
+        copyMsg.innerHTML = '<span class="ok">Copied!</span>';
+        setTimeout(() => (copyMsg.textContent = ''), 1500);
+      } catch {
+        copyMsg.textContent = 'Clipboard blocked.';
+      }
+    };
+
+    // Shortcut: Ctrl/Cmd + Enter
+    hexIn.onkeydown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        document.getElementById('convertBtn').click();
+      }
+    };
+  </script>
+</body>
+</html>
