@@ -110,7 +110,14 @@ F5 38 1C 22   F5 38 1C 22"></textarea>
       for (let i = 0; i < s.length; i += boxLen) rows.push(s.slice(i, i + boxLen));
       if (rows.length > boxCount) return rows.slice(0, boxCount);
       while (rows.length < boxCount) rows.push('');
-      rows[rows.length - 1] = rows.at(-1).padEnd(boxLen, 'A');
+      // Only pad the last box with 'A's up to the actual data length, but do not force 8 'A's if not needed
+      if (rows[rows.length - 1].length < boxLen) {
+        rows[rows.length - 1] = rows[rows.length - 1].padEnd(boxLen, 'A');
+      }
+      // Remove trailing 'A's from the last box if the data ends before them
+      if (rows[rows.length - 1].endsWith('AAAAA')) {
+        rows[rows.length - 1] = rows[rows.length - 1].replace(/A{1,5}$/,'');
+      }
       return rows;
     }
 
